@@ -53,7 +53,6 @@
       integer, intent(in) :: ng, tile, model
 !
 !  Local variable declarations.
-!
       character (len=*), parameter :: MyFile =                          &
      &  __FILE__
 !
@@ -143,6 +142,7 @@
       integer, intent(in) :: LBi, UBi, LBj, UBj
       integer, intent(in) :: IminS, ImaxS, JminS, JmaxS
       integer, intent(in) :: liold, liuol, liunw, lieol, lienw
+      
 !
 # ifdef ASSUMED_SHAPE
 #  ifdef MASKING
@@ -220,7 +220,7 @@
 !
       integer :: i, j
 !
-      real(r8) :: alfa, area, auf, avf, chux, chuy, clear, dsum, fakt
+      real(r8) :: alfa, area, auf, avf, chux, chuy, clear, dsum, fakt, cff1, cff2, tau
 # ifdef ICE_KEEL
       real(r8) :: Cbu, Cbv, spd, thic, uvf, vuf
 # endif
@@ -233,9 +233,10 @@
       real(r8) :: masu, mfu11, mfu21, mfu12, mfu22
       real(r8) :: masv, mfv11, mfv21, mfv12, mfv22
       real(r8) :: uforce, vforce
+      real(r8), dimension(IminS:ImaxS,JminS:JmaxS) :: wrk
 
 # include "set_bounds.h"
-!
+     
 !-----------------------------------------------------------------------
 !  Timestep ice U-momentum equations.
 !-----------------------------------------------------------------------
@@ -444,13 +445,8 @@
 !
           Si(i,j,lienw,isUevp)=(masu*Si(i,j,lieol,isUevp)+              &
     &                           dtevp(ng)*uforce)/alfa
-!
-# ifdef MICLM_NUDGING
-          cff = 0.5*(MInudgcof(i,j)+MInudgcof(i-1,j))
-          Si(i,j,lienw,isUevp)=Si(i,j,lienw,isUevp)+                    &
-     &                         dtevp(ng)*cff*(uiclm(i,j)-               &
-     &                                        Si(i,j,lienw,isUevp))
-# endif
+
+
 # ifdef ICE_SHOREFAST
           hu=0.5_r8*(h(i-1,j)+MIN(Zt_avg1(i-1,j), 0.0_r8)+              &
      &               h(i  ,j)+MIN(Zt_avg1(i  ,j), 0.0_r8))
@@ -687,12 +683,6 @@
           Si(i,j,lienw,isVevp)=(masv*Si(i,j,lieol,isVevp)+              &
      &                          dtevp(ng)*vforce)/alfa
 !
-# ifdef MICLM_NUDGING
-          cff=0.5*(MInudgcof(i,j)+MInudgcof(i,j-1))
-          Si(i,j,lienw,isVevp)=Si(i,j,lienw,isVevp)+                    &
-     &                         dtevp(ng)*cff*(viclm(i,j)-               &
-     &                                        Si(i,j,lienw,isVevp))
-# endif
 # ifdef ICE_SHOREFAST
           hv=0.5_r8*(h(i,j-1)+MIN(Zt_avg1(i,j-1), 0.0_r8) +             &
      &               h(i,j  )+MIN(Zt_avg1(i,j  ), 0.0_r8))
@@ -753,6 +743,52 @@
      &                    Si(:,:,lienw,isUevp),                         &
      &                    Si(:,:,lienw,isVevp))
 # endif
+
+#ifdef BEAUFORT_JET_ICE_BULK_FLUXES_W_DVD_UVICE_NUDGING
+
+!-----------------------------------------------------------------------
+! Ice velocity nudging near northern boundary (implicit style)
+! Relax Uice and Vice toward target velocity (here zero)
+!-----------------------------------------------------------------------
+
+! 1) Initialize nudging coefficient array wrk(i,j) in 1/s
+!    Strong nudging at northern edge, weaker inside ~10 grid points
+      DO j=JstrT,JendT
+        DO i=IstrT,IendT
+          wrk(i,j) = 0.0_r8
+        END DO
+      END DO
+
+!  Define timescales in seconds
+      cff1 = 10.0_r8      ! shortest tau at northern edge = 30 s
+      cff2 = 1000.0_r8    ! longest tau inside = 3000 s
+
+!  Fill wrk with 1/tau (nudging coefficient)
+      DO j=MAX(JstrR,Mm(ng)-10),JendR
+        DO i=IstrR,IendR
+          tau = cff1 + REAL(Mm(ng)-j,r8)*(cff2 - cff1)/10.0_r8
+          wrk(i,j) = 1.0_r8 / tau
+        END DO
+      END DO
+
+! 2) Apply implicit nudging: stable for any tau
+!    The semi-implicit update formula is:
+!      u_new = u_old / (1 + dt * nudging_coef)
+!    Explicitly, if written as a forward Euler, it would be:
+!      u_new = u_old + dt * nudging_coef * (0 - u_old)
+!    But the implicit form ensures stability even for small tau (strong nudging)
+
+      DO j=JstrP,Jend
+        DO i=Istr,Iend
+          Si(i,j,lienw,isUevp) = Si(i,j,lienw,isUevp) / &
+     &        (1.0_r8 + dtevp(ng) * wrk(i,j))
+
+          Si(i,j,lienw,isVevp) = Si(i,j,lienw,isVevp) / &
+     &        (1.0_r8 + dtevp(ng) * wrk(i,j))
+        END DO
+      END DO
+
+#endif
 
 !
 !-----------------------------------------------------------------------
