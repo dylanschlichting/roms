@@ -744,7 +744,7 @@
      &                    Si(:,:,lienw,isVevp))
 # endif
 
-#ifdef BEAUFORT_JET_ICE_BULK_FLUXES_W_DVD_UVICE_NUDGING
+#ifdef BEAUFORT_JET_ICE_UV_NUDGING
 
 !-----------------------------------------------------------------------
 ! Ice velocity nudging near northern boundary (implicit style)
@@ -760,8 +760,8 @@
       END DO
 
 !  Define timescales in seconds
-      cff1 = 10.0_r8      ! shortest tau at northern edge = 30 s
-      cff2 = 1000.0_r8    ! longest tau inside = 3000 s
+      cff1 = 10.0_r8      ! shortest tau at northern edge = 10 s
+      cff2 = 1000.0_r8    ! longest tau inside = 1000 s
 
 !  Fill wrk with 1/tau (nudging coefficient)
       DO j=MAX(JstrR,Mm(ng)-10),JendR

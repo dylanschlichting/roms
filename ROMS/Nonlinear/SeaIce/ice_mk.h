@@ -271,6 +271,8 @@
       logical :: IceCavity
 !
       integer :: i, j
+
+      real(r8), dimension(IminS:ImaxS,JminS:JmaxS) :: wrk
 !
       real(r8), parameter :: AlphIc = 2.034_r8          ! [W m-1 K-1]
       real(r8), parameter :: AlphSn = 0.31_r8           ! [W m-1 K-1]
@@ -290,7 +292,7 @@
       real(r8), parameter :: ykf = 3.14                 ! Yaglom/Kader
       real(r8), parameter :: z0ii = 0.02_r8             ! ice roughness
 !
-      real(r8) :: cff, cff1, cff2, cff3
+      real(r8) :: cff, cff1, cff2, cff3, cff4, cff5, tau
       real(r8) :: d1, d2i, d3, dztop, fac_shflx
       real(r8) :: ai_tmp, corfac, cot, delta_mi
       real(r8) :: hicehinv, hstar, mi_old, phi
@@ -834,6 +836,34 @@
           END IF
         END DO
       END DO
+
+#ifdef BEAUFORT_JET_ICE_AH_NUDGING
+!-----------------------------------------------------------------------
+! Initialize Beaufort Sea ice nudging coefficients.
+! Initialize outside the do loop that updates ice properties below
+!-----------------------------------------------------------------------
+
+! 1) Initialize nudging coefficient array wrk(i,j) in 1/s
+!    Strong nudging at northern edge, weaker inside ~10 grid points
+      DO j=JstrT,JendT
+        DO i=IstrT,IendT
+          wrk(i,j) = 0.0_r8
+        END DO
+      END DO
+
+!  Define timescales in seconds
+      cff4 = 10.0_r8      ! shortest tau at northern edge = 10 s
+      cff5 = 1000.0_r8    ! longest tau inside = 3000 s
+
+!  Fill wrk with 1/tau (nudging coefficient)
+      DO j=MAX(JstrR,Mm(ng)-10),JendR
+        DO i=IstrR,IendR
+          tau = cff4 + REAL(Mm(ng)-j,r8)*(cff5 - cff4)/10.0_r8
+          wrk(i,j) = 1.0_r8 / tau
+        END DO
+      END DO
+#endif
+
 !
 !-----------------------------------------------------------------------
 !  Update ice properties.
@@ -890,6 +920,14 @@
           Si(i,j,linew,isHice)=Si(i,j,linew,isHice)+                    &
      &                         dtice(ng)*cff*                           &
      &                         (hiclm(i,j)-Si(i,j,linew,isHice))
+#endif
+! Now apply the nudging 
+#ifdef BEAUFORT_JET_ICE_AH_NUDGING
+            Si(i,j,linew,isAice) = Si(i,j,linew,isAice) / &
+      &                           (1.0_r8 + dtice(ng) * wrk(i,j))
+            Si(i,j,linew,isHice) = Si(i,j,linew,isHice) / &
+      &                           (1.0_r8 + dtice(ng) * wrk(i,j))
+      
 #endif
 !
 !  Determine age of the sea ice. Any new ice production reduces the
