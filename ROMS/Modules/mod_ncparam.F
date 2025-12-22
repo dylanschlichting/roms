@@ -3366,10 +3366,6 @@
 !
 !  Set ice model state boundary indices
 !
-
-!      DO i=1,nIceS
-!        ibICE(i)=i
-!      END DO
       ic=ic_brylast
       DO i=1,15 !
         ic=ic+1
